@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "masv_portal"
+description = "A command line tool to list, create, and delete MASV Portals"
+version = "1.0.0"
+authors = [
+    { name = "MASV", email = "support@massive.io" }
+]
+dependencies = [
+    "httpx>=0.24.0",
+    "python-dotenv>=1.0.0",
+]
+requires-python = ">=3.8"
+
+[project.scripts]
+masv_portal = "masv_portal.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/masv_portal"]

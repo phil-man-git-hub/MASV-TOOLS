@@ -1,0 +1,246 @@
+# """
+# Project structure:
+# masv_portal/
+# ├── pyproject.toml           # Project metadata and dependencies
+# ├── README.md               # Project documentation
+# ├── src/
+# │   └── masv_portal/
+# │       ├── __init__.py     # Package initialization
+# │       ├── __main__.py     # Entry point
+# │       ├── api/
+# │       │   ├── __init__.py
+# │       │   ├── client.py   # API client (replaces request.js)
+# │       │   └── models.py   # Data models
+# │       ├── cli/
+# │       │   ├── __init__.py
+# │       │   ├── commands/   # Command implementations
+# │       │   │   ├── __init__.py
+# │       │   │   ├── list.py
+# │       │   │   ├── create.py
+# │       │   │   └── delete.py
+# │       │   └── parser.py  # CLI argument parsing
+# │       └── config.py      # Configuration and utilities
+# └── tests/                 # Test files
+#     └── ...
+# """
+
+# # src/masv_portal/__init__.py
+# from importlib.metadata import version
+# __version__ = version("masv_portal")
+
+# # src/masv_portal/api/models.py
+# from dataclasses import dataclass
+# from typing import Optional, List
+# from datetime import datetime
+
+# @dataclass
+# class Tag:
+#     name: str
+
+# @dataclass
+# class Portal:
+#     id: str
+#     subdomain: str
+#     created_at: datetime
+#     name: str
+#     message: str
+#     recipients: List[str]
+#     tag: Optional[Tag] = None
+#     access_code: Optional[str] = None
+#     download_password: Optional[str] = None
+
+# # src/masv_portal/api/client.py
+# from typing import List, Optional
+# import aiohttp
+# from asyncio import Lock
+# from dataclasses import asdict
+# from .models import Portal
+
+# class MASVClient:
+#     def __init__(self, api_key: str, base_url: str = "https://api.massive.app"):
+#         self.api_key = api_key
+#         self.base_url = base_url
+#         self._session: Optional[aiohttp.ClientSession] = None
+#         self._lock = Lock()
+        
+#     async def __aenter__(self):
+#         await self.ensure_session()
+#         return self
+        
+#     async def __aexit__(self, exc_type, exc_val, exc_tb):
+#         await self.close()
+        
+#     async def ensure_session(self):
+#         if self._session is None:
+#             async with self._lock:
+#                 if self._session is None:
+#                     self._session = aiohttp.ClientSession(
+#                         headers={"X-API-Key": self.api_key}
+#                     )
+    
+#     async def close(self):
+#         if self._session:
+#             await self._session.close()
+#             self._session = None
+            
+#     async def list_portals(self, team_id: str) -> List[Portal]:
+#         await self.ensure_session()
+#         async with self._session.get(f"{self.base_url}/v1/teams/{team_id}/portals") as resp:
+#             data = await resp.json()
+#             return [Portal(**item) for item in data]
+            
+#     async def create_portal(self, team_id: str, portal: Portal) -> Portal:
+#         await self.ensure_session()
+#         async with self._session.post(
+#             f"{self.base_url}/v1/teams/{team_id}/portals",
+#             json=asdict(portal)
+#         ) as resp:
+#             data = await resp.json()
+#             return Portal(**data)
+            
+#     async def delete_portal(self, portal_id: str) -> None:
+#         await self.ensure_session()
+#         async with self._session.delete(f"{self.base_url}/v1/portals/{portal_id}") as resp:
+#             await resp.json()
+
+# # src/masv_portal/config.py
+# import os
+# from dataclasses import dataclass
+# from pathlib import Path
+# from dotenv import load_dotenv
+
+# @dataclass
+# class Config:
+#     api_key: str
+#     team_id: str
+#     verbose: bool = False
+
+#     @classmethod
+#     def from_env(cls, verbose: bool = False) -> 'Config':
+#         load_dotenv()
+        
+#         api_key = os.getenv('MASV_API_KEY')
+#         team_id = os.getenv('MASV_TEAM')
+        
+#         if not api_key:
+#             raise ValueError("MASV_API_KEY environment variable not set")
+#         if not team_id:
+#             raise ValueError("MASV_TEAM environment variable not set")
+            
+#         return cls(api_key=api_key, team_id=team_id, verbose=verbose)
+
+# # src/masv_portal/cli/parser.py
+# import argparse
+# from typing import Optional
+# from .. import __version__
+
+# def create_parser() -> argparse.ArgumentParser:
+#     parser = argparse.ArgumentParser(
+#         prog='masv_portal',
+#         description='A command line tool to list, create, and delete MASV Portals'
+#     )
+    
+#     parser.add_argument(
+#         '-v', '--verbose',
+#         action='store_true',
+#         help='Log activity to standard error'
+#     )
+    
+#     parser.add_argument(
+#         '--version',
+#         action='version',
+#         version=f'%(prog)s {__version__}'
+#     )
+    
+#     subparsers = parser.add_subparsers(dest='command', required=True)
+    
+#     # List command
+#     ls_parser = subparsers.add_parser('ls', help='List portals')
+#     ls_parser.add_argument(
+#         'ids_or_subdomains',
+#         nargs='*',
+#         help='Optional portal IDs or subdomains to filter'
+#     )
+    
+#     # Create command
+#     create_parser = subparsers.add_parser('new', help='Create a new portal')
+#     create_parser.add_argument('--name', required=True)
+#     create_parser.add_argument('--subdomain', required=True)
+#     create_parser.add_argument('--message', required=True)
+#     create_parser.add_argument('--recipients', required=True, nargs='+')
+#     create_parser.add_argument('--access-code')
+#     create_parser.add_argument('--download-password')
+#     create_parser.add_argument('--tag')
+    
+#     # Delete command
+#     delete_parser = subparsers.add_parser('rm', help='Delete portals')
+#     delete_parser.add_argument('ids', nargs='+', help='Portal IDs to delete')
+    
+#     return parser
+
+# # src/masv_portal/__main__.py
+# import asyncio
+# import sys
+# from typing import Optional, List
+# from .cli.parser import create_parser
+# from .config import Config
+# from .api.client import MASVClient
+# from .api.models import Portal, Tag
+
+# async def list_portals(client: MASVClient, config: Config, ids_or_subdomains: List[str]) -> None:
+#     portals = await client.list_portals(config.team_id)
+    
+#     if ids_or_subdomains:
+#         portals = [p for p in portals if p.id in ids_or_subdomains or p.subdomain in ids_or_subdomains]
+    
+#     for portal in portals:
+#         tag_name = portal.tag.name if portal.tag else ''
+#         print(f"{portal.id} {portal.created_at} \"{tag_name}\" {portal.subdomain}")
+
+# async def create_portal(client: MASVClient, config: Config, args) -> None:
+#     portal = Portal(
+#         id='',  # Will be set by API
+#         name=args.name,
+#         subdomain=args.subdomain,
+#         message=args.message,
+#         recipients=args.recipients,
+#         created_at=None,  # Will be set by API
+#         access_code=args.access_code,
+#         download_password=args.download_password,
+#         tag=Tag(args.tag) if args.tag else None
+#     )
+    
+#     created = await client.create_portal(config.team_id, portal)
+#     print(f"{created.id} https://{created.subdomain}.portal.massive.io/")
+
+# async def delete_portals(client: MASVClient, config: Config, ids: List[str]) -> None:
+#     for portal_id in ids:
+#         await client.delete_portal(portal_id)
+
+# async def main(argv: Optional[List[str]] = None) -> int:
+#     parser = create_parser()
+#     args = parser.parse_args(argv)
+    
+#     try:
+#         config = Config.from_env(verbose=args.verbose)
+#     except ValueError as e:
+#         print(f"Configuration error: {e}", file=sys.stderr)
+#         return 1
+        
+#     async with MASVClient(config.api_key) as client:
+#         try:
+#             if args.command == 'ls':
+#                 await list_portals(client, config, args.ids_or_subdomains)
+#             elif args.command == 'new':
+#                 await create_portal(client, config, args)
+#             elif args.command == 'rm':
+#                 await delete_portals(client, config, args.ids)
+#             return 0
+#         except Exception as e:
+#             print(f"Error: {e}", file=sys.stderr)
+#             if args.verbose:
+#                 raise
+#             return 1
+
+# if __name__ == '__main__':
+#     sys.exit(asyncio.run(main()))
